@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Real-time American Sign Language detection powered by YOLOv11 and deep learning.">
+
+    <title>SignAI — Real-Time ASL Detection</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+      /* ─── Reset & Base ──────────────────────────────────────────────── */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg-deep:      #060810;
+        --bg-mid:       #0d1117;
+        --surface:      rgba(255, 255, 255, 0.04);
+        --surface-hover:rgba(255, 255, 255, 0.07);
+        --border:       rgba(255, 255, 255, 0.08);
+
+        --accent-1: #6366f1;
+        --accent-2: #8b5cf6;
+        --accent-3: #06b6d4;
+
+        --text-primary:   #f0f4ff;
+        --text-secondary: #8892a4;
+        --text-muted:     #4a5568;
+
+        --radius-card: 20px;
+
+        --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      html, body {
+        height: 100%;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background-color: var(--bg-deep);
+        color: var(--text-primary);
+        overflow-x: hidden;
+      }
+
+      /* ─── Animated Background ───────────────────────────────────────── */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 50% at 20% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+          radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6, 182, 212, 0.09) 0%, transparent 60%),
+          radial-gradient(ellipse 50% 30% at 50% 50%, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* ─── Page Layout ───────────────────────────────────────────────── */
+      .page {
+        position: relative;
+        z-index: 1;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px 24px 56px;
+      }
+
+      /* ─── Header ────────────────────────────────────────────────────── */
+      header {
+        width: 100%;
+        max-width: 900px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 36px;
+        animation: fadeDown 0.7s ease both;
+      }
+
+      .logo-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent-3);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      .logo-pill .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent-3);
+        box-shadow: 0 0 8px var(--accent-3);
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      h1 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        text-align: center;
+        background: linear-gradient(135deg, #f0f4ff 0%, #a5b4fc 50%, #67e8f9 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .accent-bar {
+        width: 60px;
+        height: 3px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+      }
+
+      .subtitle {
+        font-size: 0.93rem;
+        color: var(--text-secondary);
+        font-weight: 400;
+        text-align: center;
+        max-width: 500px;
+        line-height: 1.65;
+      }
+
+      /* ─── Main Card ──────────────────────────────────────────────────── */
+      .card {
+        width: 100%;
+        max-width: 900px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        overflow: hidden;
+        box-shadow:
+          0 0 0 1px rgba(255,255,255,0.03),
+          0 20px 60px rgba(0,0,0,0.5),
+          0 0 80px rgba(99, 102, 241, 0.06);
+        animation: fadeUp 0.7s 0.15s ease both;
+        transition: box-shadow var(--transition);
+      }
+
+      .card:hover {
+        box-shadow:
+          0 0 0 1px rgba(255,255,255,0.05),
+          0 28px 80px rgba(0,0,0,0.55),
+          0 0 100px rgba(99, 102, 241, 0.1);
+      }
+
+      /* macOS-style title bar */
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 13px 20px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .traffic-lights {
+        display: flex;
+        gap: 7px;
+      }
+
+      .traffic-lights span {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        transition: filter var(--transition);
+      }
+
+      .traffic-lights:hover .tl-red    { filter: brightness(1.15); }
+      .traffic-lights:hover .tl-yellow { filter: brightness(1.15); }
+      .traffic-lights:hover .tl-green  { filter: brightness(1.15); }
+
+      .tl-red    { background: #ff5f57; }
+      .tl-yellow { background: #febc2e; }
+      .tl-green  { background: #28c840; }
+
+      .stream-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+
+      .live-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 6px #22c55e;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      /* ─── Video Feed ─────────────────────────────────────────────────── */
+      .video-wrapper {
+        position: relative;
+        width: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+
+      .video-wrapper img {
+        display: block;
+        width: 100%;
+        height: auto;
+        object-fit: cover;
+      }
+
+      /* Bottom vignette over video */
+      .video-wrapper::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 72px;
+        background: linear-gradient(to top, rgba(6, 8, 16, 0.65), transparent);
+        pointer-events: none;
+      }
+
+      /* ─── Stats bar ──────────────────────────────────────────────────── */
+      .card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        border-top: 1px solid var(--border);
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .stat {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .stat-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .stat-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+
+      .stat-value.highlight {
+        color: var(--accent-3);
+      }
+
+      .divider-v {
+        width: 1px;
+        height: 30px;
+        background: var(--border);
+        flex-shrink: 0;
+      }
+
+      /* ─── Page Footer ────────────────────────────────────────────────── */
+      footer {
+        margin-top: 28px;
+        font-size: 12px;
+        color: var(--text-muted);
+        text-align: center;
+        line-height: 1.8;
+        animation: fadeUp 0.7s 0.3s ease both;
+      }
+
+      footer a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        transition: color var(--transition);
+      }
+
+      footer a:hover {
+        color: var(--text-primary);
+      }
+
+      /* ─── Keyframes ──────────────────────────────────────────────────── */
+      @keyframes fadeDown {
+        from { opacity: 0; transform: translateY(-18px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1;   transform: scale(1); }
+        50%       { opacity: 0.55; transform: scale(0.82); }
+      }
+
+      /* ─── Responsive ─────────────────────────────────────────────────── */
+      @media (max-width: 600px) {
+        .card-footer { justify-content: center; }
+        .divider-v   { display: none; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="page">
+
+      <!-- Header -->
+      <header>
+        <div class="logo-pill">
+          <span class="dot"></span>
+          Sign AI &middot; YOLOv11
+        </div>
+
+        <h1>American Sign Language<br>Real-Time Detection</h1>
+        <div class="accent-bar"></div>
+
+        <p class="subtitle">
+          Live ASL gesture recognition powered by YOLOv11 deep learning — translating hand signs instantly, frame by frame.
+        </p>
+      </header>
+
+      <!-- Main card -->
+      <div class="card">
+
+        <!-- Title bar -->
+        <div class="card-header">
+          <div class="traffic-lights">
+            <span class="tl-red"></span>
+            <span class="tl-yellow"></span>
+            <span class="tl-green"></span>
+          </div>
+          <div class="stream-badge">
+            <span class="live-dot"></span>
+            Live Stream
+          </div>
+        </div>
+
+        <!-- Video -->
+        <div class="video-wrapper">
+          <img src="{{ url_for('video') }}" alt="Live ASL detection feed">
+        </div>
+
+        <!-- Stats -->
+        <div class="card-footer">
+          <div class="stat">
+            <span class="stat-label">Model</span>
+            <span class="stat-value">YOLOv11</span>
+          </div>
+
+          <div class="divider-v"></div>
+
+          <div class="stat">
+            <span class="stat-label">Task</span>
+            <span class="stat-value">Sign Language Detection</span>
+          </div>
+
+          <div class="divider-v"></div>
+
+          <div class="stat">
+            <span class="stat-label">Source</span>
+            <span class="stat-value highlight">Webcam &middot; Live</span>
+          </div>
+
+          <div class="divider-v"></div>
+
+          <div class="stat">
+            <span class="stat-label">Made by</span>
+            <span class="stat-value">Sign AI</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer>
+        Built with
+        <a href="https://docs.ultralytics.com" target="_blank" rel="noopener">Ultralytics YOLOv11</a>,
+        <a href="https://flask.palletsprojects.com" target="_blank" rel="noopener">Flask</a>
+        &amp;
+        <a href="https://opencv.org" target="_blank" rel="noopener">OpenCV</a>
+      </footer>
+
+    </div>
+  </body>
+</html>
