@@ -3,12 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Real-time American Sign Language detection powered by YOLOv11 deep learning. Live webcam recognition with real bestBB.pt model, live HUD telemetry, and instant voice output.">
+    <meta name="description" content="Real-time American Sign Language detection powered by YOLOv11 deep learning. Live webcam recognition with real bestBB model weights running 100% in the browser.">
     <title>SignAI — Real-Time ASL Detection (YOLOv11)</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Microsoft ONNX Runtime Web for zero-server in-browser inference -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
 
     <style>
       /* ─── Reset & Design Tokens ───────────────────────────────────────── */
@@ -126,45 +129,13 @@
       .subtitle {
         font-size: 0.95rem;
         color: var(--text-secondary);
-        max-width: 580px;
+        max-width: 600px;
         line-height: 1.6;
         font-weight: 400;
       }
 
-      /* ─── Mode Selector Tabs ─────────────────────────────────────────── */
-      .mode-tabs {
-        display: flex;
-        gap: 8px;
-        background: rgba(255, 255, 255, 0.04);
-        padding: 4px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        margin-bottom: 18px;
-      }
-
-      .tab-btn {
-        background: transparent;
-        border: none;
-        color: var(--text-secondary);
-        font-size: 13px;
-        font-weight: 600;
-        padding: 8px 18px;
-        border-radius: 999px;
-        cursor: pointer;
-        transition: all var(--transition);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .tab-btn.active {
-        background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-        color: #ffffff;
-        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
-      }
-
-      /* ─── API Config Banner ──────────────────────────────────────────── */
-      .api-bar {
+      /* ─── Model Status Bar ───────────────────────────────────────────── */
+      .model-bar {
         width: 100%;
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid var(--border);
@@ -179,14 +150,14 @@
         flex-wrap: wrap;
       }
 
-      .api-status-group {
+      .model-status-group {
         display: flex;
         align-items: center;
         gap: 8px;
         font-family: 'JetBrains Mono', monospace;
       }
 
-      .api-dot {
+      .model-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
@@ -194,50 +165,15 @@
         box-shadow: 0 0 8px var(--accent-amber);
       }
 
-      .api-dot.connected {
+      .model-dot.ready {
         background: var(--accent-emerald);
         box-shadow: 0 0 8px var(--accent-emerald);
       }
 
-      .api-input-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 1;
-        max-width: 480px;
-      }
-
-      .api-input {
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid var(--border);
-        color: #ffffff;
-        font-size: 12px;
+      .model-meta {
+        color: var(--text-secondary);
         font-family: 'JetBrains Mono', monospace;
-        padding: 6px 12px;
-        border-radius: 6px;
-        width: 100%;
-      }
-
-      .api-input:focus {
-        outline: none;
-        border-color: var(--accent-cyan);
-      }
-
-      .btn-sm {
-        padding: 6px 12px;
-        border-radius: 6px;
         font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        background: var(--accent-primary);
-        color: #ffffff;
-        border: none;
-        white-space: nowrap;
-        transition: all var(--transition);
-      }
-
-      .btn-sm:hover {
-        background: var(--accent-secondary);
       }
 
       /* ─── Main Card Frame ────────────────────────────────────────────── */
@@ -336,8 +272,8 @@
         z-index: 5;
       }
 
-      /* Hidden capture canvas for sending frames */
-      #captureCanvas {
+      /* Hidden 640x640 preprocessing canvas */
+      #preprocessCanvas {
         display: none;
       }
 
@@ -419,6 +355,12 @@
       .btn-primary:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 24px rgba(99, 102, 241, 0.55);
+      }
+
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
       }
 
       .btn-secondary {
@@ -726,37 +668,24 @@
       <header>
         <div class="logo-pill">
           <span class="dot"></span>
-          SignAI &middot; YOLOv11 &middot; bestBB.pt
+          SignAI &middot; YOLOv11 &middot; ONNX Web
         </div>
 
         <h1>American Sign Language<br>Real-Time Recognition</h1>
 
         <p class="subtitle">
-          Real deep learning ASL translation powered by your custom trained YOLOv11 model — detecting hand signs with precision, bounding boxes, and instant speech synthesis.
+          Real deep learning ASL translation powered by your trained YOLOv11 model (`bestBB.onnx`) — running 100% in-browser on Cloudflare Pages with zero server latency.
         </p>
-
-        <!-- Mode Tabs -->
-        <div class="mode-tabs">
-          <button class="tab-btn active" id="tabCamera" onclick="switchMode('camera')">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-            Live Webcam (bestBB.pt)
-          </button>
-          <button class="tab-btn" id="tabSimulator" onclick="switchMode('simulator')">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            Sign Reference & Practice
-          </button>
-        </div>
       </header>
 
-      <!-- Backend Connection Settings Bar -->
-      <div class="api-bar">
-        <div class="api-status-group">
-          <span class="api-dot" id="apiDot"></span>
-          <span id="apiStatusText">YOLO API: Checking...</span>
+      <!-- Model Status Bar -->
+      <div class="model-bar">
+        <div class="model-status-group">
+          <span class="model-dot" id="modelDot"></span>
+          <span id="modelStatusText">Loading YOLOv11 Neural Engine...</span>
         </div>
-        <div class="api-input-group">
-          <input type="text" class="api-input" id="apiUrlInput" placeholder="https://your-backend-app.hf.space or http://localhost:5000" value="http://localhost:5000">
-          <button class="btn-sm" onclick="checkApiConnection()">Connect</button>
+        <div class="model-meta">
+          Weights: bestBB.onnx (10.1 MB) &middot; Classes: A–Z (26 Signs)
         </div>
       </div>
 
@@ -772,7 +701,7 @@
           </div>
           <div class="stream-badge">
             <span class="live-dot" id="liveDot"></span>
-            <span id="streamStatus">ENGINE READY</span>
+            <span id="streamStatus">ENGINE LOADING</span>
           </div>
         </div>
 
@@ -780,7 +709,7 @@
         <div class="viewport-wrapper" id="viewport">
           <video id="webcamVideo" autoplay playsinline muted></video>
           <canvas id="hudCanvas"></canvas>
-          <canvas id="captureCanvas"></canvas>
+          <canvas id="preprocessCanvas"></canvas>
 
           <!-- Top HUD Overlay -->
           <div class="hud-top-bar">
@@ -793,8 +722,8 @@
               <span class="val" id="latencyCounter">--</span>
             </div>
             <div class="hud-chip">
-              <span>WEIGHTS:</span>
-              <span class="val">bestBB.pt</span>
+              <span>MODEL:</span>
+              <span class="val">YOLOv11 bestBB</span>
             </div>
           </div>
 
@@ -803,15 +732,12 @@
             <div class="scanner-icon">✋</div>
             <h2 class="idle-title" id="idleTitle">Ready for Live ASL Detection</h2>
             <p class="idle-desc" id="idleDesc">
-              Enable your camera to run real-time inference using your YOLOv11 model. Frames will be evaluated for hand signs with bounding box coordinates.
+              Enable your camera to run real-time inference using your trained YOLOv11 model. Hand signs will be detected with bounding boxes and letters.
             </p>
             <div class="btn-group">
-              <button class="btn btn-primary" id="btnStartCamera" onclick="startCamera()">
+              <button class="btn btn-primary" id="btnStartCamera" onclick="startCamera()" disabled>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                Enable Camera
-              </button>
-              <button class="btn btn-secondary" onclick="switchMode('simulator')">
-                View ASL Signs
+                Loading Model...
               </button>
             </div>
           </div>
@@ -850,10 +776,10 @@
         <div class="card-footer">
           <div class="stat">
             <span class="stat-label">Model Weights</span>
-            <span class="stat-value">bestBB.pt (5.48 MB)</span>
+            <span class="stat-value">bestBB.onnx</span>
           </div>
           <div class="stat">
-            <span class="stat-label">Model Type</span>
+            <span class="stat-label">Model Architecture</span>
             <span class="stat-value highlight">Ultralytics YOLOv11</span>
           </div>
           <div class="stat">
@@ -868,12 +794,12 @@
 
       </div>
 
-      <!-- Interactive ASL Alphabet Practice Grid -->
+      <!-- Interactive ASL Alphabet Reference Grid -->
       <div class="interactive-section">
         <div class="section-header">
           <div>
             <h3 class="section-title">ASL Alphabet Reference</h3>
-            <p class="section-desc">Click any letter to view sign tips and manually add to your transcript.</p>
+            <p class="section-desc">Click any letter to append to your transcript.</p>
           </div>
         </div>
 
@@ -884,7 +810,7 @@
 
       <!-- Page Footer -->
       <footer>
-        SignAI ASL Detection &middot; Powered by Ultralytics YOLOv11 (`bestBB.pt`) &middot; Hosted on
+        SignAI ASL Detection &middot; Powered by Ultralytics YOLOv11 (`bestBB.onnx`) &middot; Hosted on
         <a href="https://pages.cloudflare.com" target="_blank" rel="noopener">Cloudflare Pages</a> &middot;
         <a href="https://github.com/AshwinFernandez/ProjectASL" target="_blank" rel="noopener">GitHub Repository</a>
       </footer>
@@ -893,37 +819,39 @@
 
     <!-- Application Logic -->
     <script>
-      const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-      let currentMode = 'camera';
+      const ALPHABET = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"];
+
+      let onnxSession = null;
+      let isModelLoaded = false;
       let cameraStream = null;
       let isCameraRunning = false;
+      let isInferring = false;
       let activeDetections = [];
       let minConfidence = 0.45;
       let sentence = "";
       let lastAppendedLetter = "";
       let lastDetectionTime = 0;
-      let isPredicting = false;
-
-      // API Backend URL (Defaults to local or saved URL from localStorage)
-      const savedApiUrl = localStorage.getItem('asl_api_url') || "http://localhost:5000";
-      document.getElementById('apiUrlInput').value = savedApiUrl;
 
       const video = document.getElementById('webcamVideo');
       const canvas = document.getElementById('hudCanvas');
       const ctx = canvas.getContext('2d');
-      const capCanvas = document.getElementById('captureCanvas');
-      const capCtx = capCanvas.getContext('2d');
+      const prepCanvas = document.getElementById('preprocessCanvas');
+      const prepCtx = prepCanvas.getContext('2d');
+      prepCanvas.width = 640;
+      prepCanvas.height = 640;
+
       const idleOverlay = document.getElementById('idleOverlay');
       const streamStatus = document.getElementById('streamStatus');
       const liveDot = document.getElementById('liveDot');
+      const modelDot = document.getElementById('modelDot');
+      const modelStatusText = document.getElementById('modelStatusText');
+      const btnStartCamera = document.getElementById('btnStartCamera');
+      const btnToggleCam = document.getElementById('btnToggleCam');
       const activeSignLabel = document.getElementById('activeSignLabel');
       const detectionCountLabel = document.getElementById('detectionCountLabel');
       const sentenceOutput = document.getElementById('sentenceOutput');
       const fpsCounter = document.getElementById('fpsCounter');
       const latencyCounter = document.getElementById('latencyCounter');
-      const btnToggleCam = document.getElementById('btnToggleCam');
-      const apiDot = document.getElementById('apiDot');
-      const apiStatusText = document.getElementById('apiStatusText');
 
       // Populate Alphabet Grid
       const signGrid = document.getElementById('signGrid');
@@ -947,56 +875,37 @@
       window.addEventListener('resize', resizeCanvas);
       resizeCanvas();
 
-      // Check API connection to real YOLO backend
-      async function checkApiConnection() {
-        const url = document.getElementById('apiUrlInput').value.trim().replace(/\/+$/, "");
-        localStorage.setItem('asl_api_url', url);
-        apiStatusText.textContent = 'Connecting to YOLO...';
-        apiDot.className = 'api-dot';
-
+      // Load ONNX Runtime Session
+      async function loadModel() {
         try {
-          const resp = await fetch(`${url}/health`, { method: 'GET' });
-          if (resp.ok) {
-            const data = await resp.json();
-            apiDot.className = 'api-dot connected';
-            apiStatusText.textContent = `YOLO API: Connected (${data.classes ? Object.keys(data.classes).length : 'bestBB.pt'} classes)`;
-          } else {
-            throw new Error(`HTTP ${resp.status}`);
-          }
+          modelStatusText.textContent = 'Loading YOLOv11 Engine (bestBB.onnx)...';
+          ort.env.wasm.numThreads = 2;
+
+          onnxSession = await ort.InferenceSession.create('./bestBB.onnx', {
+            executionProviders: ['wasm']
+          });
+
+          isModelLoaded = true;
+          modelDot.className = 'model-dot ready';
+          modelStatusText.textContent = 'YOLOv11 Engine Ready (100% In-Browser · 0 Servers)';
+          streamStatus.textContent = 'READY';
+          btnStartCamera.disabled = false;
+          btnStartCamera.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+            Enable Camera
+          `;
         } catch (err) {
-          apiDot.className = 'api-dot';
-          apiStatusText.textContent = 'YOLO API: Disconnected (Check URL or start backend)';
+          console.error('Failed to load ONNX model:', err);
+          modelStatusText.textContent = 'Model load failed. Check bestBB.onnx file.';
         }
       }
 
-      // Check on load
-      checkApiConnection();
-
-      // Mode switching
-      function switchMode(mode) {
-        currentMode = mode;
-        document.getElementById('tabCamera').classList.toggle('active', mode === 'camera');
-        document.getElementById('tabSimulator').classList.toggle('active', mode === 'simulator');
-
-        if (mode === 'simulator') {
-          idleOverlay.classList.add('hidden');
-          streamStatus.textContent = 'REFERENCE MODE';
-          liveDot.style.background = 'var(--accent-cyan)';
-          activeDetections = [];
-          drawDetections();
-        } else {
-          if (!isCameraRunning) {
-            idleOverlay.classList.remove('hidden');
-            streamStatus.textContent = 'ENGINE READY';
-            liveDot.style.background = 'var(--accent-emerald)';
-          }
-        }
-      }
-
-      // Camera lifecycle
+      // Start camera
       async function startCamera() {
+        if (!isModelLoaded) return;
+
         try {
-          streamStatus.textContent = 'STARTING CAMERA...';
+          streamStatus.textContent = 'CONNECTING CAMERA...';
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 1280 },
@@ -1017,16 +926,13 @@
           liveDot.style.background = '#22c55e';
 
           resizeCanvas();
-          capCanvas.width = 640;
-          capCanvas.height = 360;
-
           requestAnimationFrame(renderLoop);
           startInferenceLoop();
         } catch (err) {
-          console.warn('Camera permission denied or unavailable:', err);
+          console.warn('Camera permission denied:', err);
           idleOverlay.classList.remove('hidden');
           document.getElementById('idleTitle').textContent = 'Camera Access Required';
-          document.getElementById('idleDesc').textContent = 'Please enable camera permissions in your browser to run live ASL hand detection.';
+          document.getElementById('idleDesc').textContent = 'Please enable camera permissions in your browser to detect ASL signs.';
           streamStatus.textContent = 'CAMERA BLOCKED';
           liveDot.style.background = 'var(--accent-rose)';
         }
@@ -1057,75 +963,146 @@
         }
       }
 
-      // Real YOLO Inference Loop
+      // In-browser YOLOv11 Inference Loop
       async function startInferenceLoop() {
         while (isCameraRunning) {
-          if (!isPredicting && video.readyState === video.HAVE_ENOUGH_DATA) {
-            await runYoloInference();
+          if (!isInferring && video.readyState === video.HAVE_ENOUGH_DATA) {
+            await runInference();
           }
-          // Small delay between requests to save bandwidth and prevent congestion
-          await new Promise(r => setTimeout(r, 90));
+          await new Promise(r => setTimeout(r, 40));
         }
       }
 
-      async function runYoloInference() {
-        isPredicting = true;
+      async function runInference() {
+        if (!onnxSession) return;
+        isInferring = true;
         const startTime = performance.now();
-        const apiUrl = document.getElementById('apiUrlInput').value.trim().replace(/\/+$/, "");
 
         try {
-          // Mirror frame onto capture canvas to match what user sees
-          capCtx.save();
-          capCtx.scale(-1, 1);
-          capCtx.drawImage(video, -capCanvas.width, 0, capCanvas.width, capCanvas.height);
-          capCtx.restore();
+          // 1. Draw mirrored frame to 640x640 canvas
+          prepCtx.save();
+          prepCtx.scale(-1, 1);
+          prepCtx.drawImage(video, -640, 0, 640, 640);
+          prepCtx.restore();
 
-          const blob = await new Promise(resolve => capCanvas.toBlob(resolve, 'image/jpeg', 0.65));
-          if (!blob) return;
+          const imgData = prepCtx.getImageData(0, 0, 640, 640);
+          const data = imgData.data;
 
-          const formData = new FormData();
-          formData.append('image', blob, 'frame.jpg');
+          // 2. Preprocess to Float32Array in CHW order (channel first: R, G, B) normalized to 0..1
+          const floatArr = new Float32Array(3 * 640 * 640);
+          const totalPix = 640 * 640;
+          for (let i = 0; i < totalPix; i++) {
+            floatArr[i] = data[i * 4] / 255.0;                   // Red
+            floatArr[totalPix + i] = data[i * 4 + 1] / 255.0;     // Green
+            floatArr[2 * totalPix + i] = data[i * 4 + 2] / 255.0; // Blue
+          }
 
-          const response = await fetch(`${apiUrl}/predict?conf=${minConfidence}`, {
-            method: 'POST',
-            body: formData
-          });
+          // 3. Create tensor and execute session
+          const tensor = new ort.Tensor('float32', floatArr, [1, 3, 640, 640]);
+          const feeds = { images: tensor };
+          const results = await onnxSession.run(feeds);
+          const outputTensor = results.output0; // Shape: [1, 30, 8400]
+          const outData = outputTensor.data;
 
-          if (response.ok) {
-            const data = await response.json();
-            const elapsed = Math.round(performance.now() - startTime);
-            latencyCounter.textContent = `${elapsed}ms`;
+          // 4. Parse YOLOv11 detections: 8400 anchors, 30 values per anchor (cx, cy, w, h + 26 classes)
+          const numAnchors = 8400;
+          const detections = [];
 
-            if (data.detections && Array.isArray(data.detections)) {
-              activeDetections = data.detections;
-              detectionCountLabel.textContent = activeDetections.length;
-
-              if (activeDetections.length > 0) {
-                // Pick highest confidence detection
-                const top = activeDetections[0];
-                activeSignLabel.textContent = `${top.class} (${(top.confidence * 100).toFixed(1)}%)`;
-
-                // Add to transcribed sentence if sustained
-                const now = Date.now();
-                if (top.class !== lastAppendedLetter || (now - lastDetectionTime > 1800)) {
-                  sentence += top.class;
-                  sentenceOutput.textContent = sentence;
-                  lastAppendedLetter = top.class;
-                  lastDetectionTime = now;
-                }
-              } else {
-                activeSignLabel.textContent = "Scanning...";
+          for (let i = 0; i < numAnchors; i++) {
+            // Find max class score among classes 0..25 (rows 4..29)
+            let maxScore = 0;
+            let maxClass = -1;
+            for (let c = 0; c < 26; c++) {
+              const score = outData[(4 + c) * numAnchors + i];
+              if (score > maxScore) {
+                maxScore = score;
+                maxClass = c;
               }
             }
+
+            if (maxScore >= minConfidence) {
+              const cx = outData[0 * numAnchors + i];
+              const cy = outData[1 * numAnchors + i];
+              const w  = outData[2 * numAnchors + i];
+              const h  = outData[3 * numAnchors + i];
+
+              detections.push({
+                x1: (cx - w / 2) / 640,
+                y1: (cy - h / 2) / 640,
+                x2: (cx + w / 2) / 640,
+                y2: (cy + h / 2) / 640,
+                score: maxScore,
+                classId: maxClass,
+                label: ALPHABET[maxClass] || `Class ${maxClass}`
+              });
+            }
           }
+
+          // 5. Non-Maximum Suppression (NMS)
+          const nmsDetections = applyNMS(detections, 0.45);
+          activeDetections = nmsDetections;
+          detectionCountLabel.textContent = activeDetections.length;
+
+          const elapsed = Math.round(performance.now() - startTime);
+          latencyCounter.textContent = `${elapsed}ms`;
+
+          if (activeDetections.length > 0) {
+            const top = activeDetections[0];
+            activeSignLabel.textContent = `${top.label} (${(top.score * 100).toFixed(1)}%)`;
+
+            // Append to sentence if held stably
+            const now = Date.now();
+            if (top.label !== lastAppendedLetter || (now - lastDetectionTime > 1800)) {
+              sentence += top.label;
+              sentenceOutput.textContent = sentence;
+              lastAppendedLetter = top.label;
+              lastDetectionTime = now;
+            }
+          } else {
+            activeSignLabel.textContent = "Scanning...";
+          }
+
         } catch (err) {
-          // If backend offline or network error, silently handle
+          console.error('Inference error:', err);
         } finally {
-          isPredicting = false;
+          isInferring = false;
         }
       }
 
-      // Rendering Loop for HUD Bounding Boxes
+      // Non-Maximum Suppression
+      function applyNMS(boxes, iouThreshold) {
+        boxes.sort((a, b) => b.score - a.score);
+        const selected = [];
+
+        for (let i = 0; i < boxes.length; i++) {
+          let keep = true;
+          for (let j = 0; j < selected.length; j++) {
+            if (calculateIoU(boxes[i], selected[j]) > iouThreshold) {
+              keep = false;
+              break;
+            }
+          }
+          if (keep) {
+            selected.push(boxes[i]);
+            if (selected.length >= 5) break; // Max 5 detections
+          }
+        }
+        return selected;
+      }
+
+      function calculateIoU(a, b) {
+        const x1 = Math.max(a.x1, b.x1);
+        const y1 = Math.max(a.y1, b.y1);
+        const x2 = Math.min(a.x2, b.x2);
+        const y2 = Math.min(a.y2, b.y2);
+
+        const interArea = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+        const areaA = (a.x2 - a.x1) * (a.y2 - a.y1);
+        const areaB = (b.x2 - b.x1) * (b.y2 - b.y1);
+        return interArea / (areaA + areaB - interArea + 1e-6);
+      }
+
+      // Render Loop for HUD Bounding Boxes
       let lastFrameTime = performance.now();
       let frameCount = 0;
 
@@ -1144,21 +1121,18 @@
         requestAnimationFrame(renderLoop);
       }
 
-      // Draw real bounding boxes returned by YOLO
+      // Draw real bounding boxes around hands
       function drawDetections() {
         const cw = canvas.width;
         const ch = canvas.height;
 
         activeDetections.forEach(det => {
-          if (!det.box_normalized) return;
-
-          const [nx1, ny1, nx2, ny2] = det.box_normalized;
-          const x = nx1 * cw;
-          const y = ny1 * ch;
-          const bw = (nx2 - nx1) * cw;
-          const bh = (ny2 - ny1) * ch;
-          const label = det.class;
-          const conf = det.confidence;
+          const x = Math.max(0, det.x1 * cw);
+          const y = Math.max(0, det.y1 * ch);
+          const bw = Math.min(cw - x, (det.x2 - det.x1) * cw);
+          const bh = Math.min(ch - y, (det.y2 - det.y1) * ch);
+          const label = det.label;
+          const conf = det.score;
 
           ctx.save();
           ctx.strokeStyle = '#06b6d4';
@@ -1192,13 +1166,13 @@
           ctx.lineTo(x + bw, y + bh - cornerLen);
           ctx.stroke();
 
-          // Perimeter
+          // Faint perimeter
           ctx.shadowBlur = 0;
           ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
           ctx.strokeRect(x, y, bw, bh);
 
           // Tag Pill
-          const tagText = `bestBB.pt: [ ${label} ]  ${(conf * 100).toFixed(1)}%`;
+          const tagText = `Sign: [ ${label} ]  ${(conf * 100).toFixed(1)}%`;
           ctx.font = '600 12px "JetBrains Mono", monospace';
           const textMetrics = ctx.measureText(tagText);
           const tagW = textMetrics.width + 16;
@@ -1267,6 +1241,9 @@
         minConfidence = val / 100;
         document.getElementById('confVal').textContent = `${val}%`;
       }
+
+      // Start loading model on load
+      loadModel();
     </script>
   </body>
 </html>
